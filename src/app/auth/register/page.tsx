@@ -13,9 +13,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ValidatedInput } from "@/components/ui/validated-input";
 import Link from "next/link";
 import { authAPI } from "@/lib/api";
 import { signIn, useSession } from "next-auth/react";
+import toast from "react-hot-toast";
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -29,6 +31,15 @@ export default function RegisterPage() {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [generalError, setGeneralError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isFormValid, setIsFormValid] = useState(false);
+  const [validationStates, setValidationStates] = useState({
+    firstName: false,
+    lastName: false,
+    email: false,
+    phone: true, // Optional field
+    password: false,
+    confirmPassword: false,
+  });
   const router = useRouter();
   const { data: session, status } = useSession();
 
@@ -41,6 +52,30 @@ export default function RegisterPage() {
       return;
     }
   }, [session, status, router]);
+
+  const handleValidationChange = (
+    field: keyof typeof validationStates,
+    isValid: boolean
+  ) => {
+    setValidationStates((prev) => {
+      const newStates = { ...prev, [field]: isValid };
+
+      // Check if all required fields are valid
+      const allValid =
+        newStates.firstName &&
+        newStates.lastName &&
+        newStates.email &&
+        newStates.password &&
+        newStates.confirmPassword;
+
+      setIsFormValid(allValid);
+      return newStates;
+    });
+  };
+
+  const validateConfirmPassword = (value: string) => {
+    return value === formData.password;
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -169,102 +204,153 @@ export default function RegisterPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">Нэр</Label>
-                  <Input
+                  <ValidatedInput
                     id="firstName"
                     name="firstName"
                     type="text"
                     placeholder="Таны нэр"
                     value={formData.firstName}
-                    onChange={handleInputChange}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        firstName: e.target.value,
+                      }))
+                    }
+                    validationType="name"
+                    fieldName="Нэр"
+                    onValidationChange={(isValid) =>
+                      handleValidationChange("firstName", isValid)
+                    }
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
-                  {errors.firstName && (
-                    <p className="text-sm text-red-600">{errors.firstName}</p>
-                  )}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="lastName">Овог</Label>
-                  <Input
+                  <ValidatedInput
                     id="lastName"
                     name="lastName"
                     type="text"
                     placeholder="Таны овог"
                     value={formData.lastName}
-                    onChange={handleInputChange}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        lastName: e.target.value,
+                      }))
+                    }
+                    validationType="name"
+                    fieldName="Овог"
+                    onValidationChange={(isValid) =>
+                      handleValidationChange("lastName", isValid)
+                    }
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
-                  {errors.lastName && (
-                    <p className="text-sm text-red-600">{errors.lastName}</p>
-                  )}
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="email">И-мэйл хаяг</Label>
-                <Input
+                <ValidatedInput
                   id="email"
                   name="email"
                   type="email"
                   placeholder="example@email.com"
                   value={formData.email}
-                  onChange={handleInputChange}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, email: e.target.value }))
+                  }
+                  validationType="email"
+                  fieldName="И-мэйл хаяг"
+                  onValidationChange={(isValid) =>
+                    handleValidationChange("email", isValid)
+                  }
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-                {errors.email && (
-                  <p className="text-sm text-red-600">{errors.email}</p>
-                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="phone">Утасны дугаар</Label>
-                <Input
+                <ValidatedInput
                   id="phone"
                   name="phone"
                   type="tel"
                   placeholder="88999157"
                   value={formData.phone}
-                  onChange={handleInputChange}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, phone: e.target.value }))
+                  }
+                  validationType="phone"
+                  fieldName="Утасны дугаар"
+                  onValidationChange={(isValid) =>
+                    handleValidationChange("phone", isValid)
+                  }
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="password">Нууц үг</Label>
-                <Input
+                <ValidatedInput
                   id="password"
                   name="password"
                   type="password"
                   placeholder="••••••••"
                   value={formData.password}
-                  onChange={handleInputChange}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      password: e.target.value,
+                    }))
+                  }
+                  validationType="password"
+                  fieldName="Нууц үг"
+                  onValidationChange={(isValid) =>
+                    handleValidationChange("password", isValid)
+                  }
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-                {errors.password && (
-                  <p className="text-sm text-red-600">{errors.password}</p>
-                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Нууц үг давтах</Label>
-                <Input
+                <ValidatedInput
                   id="confirmPassword"
                   name="confirmPassword"
                   type="password"
                   placeholder="••••••••"
                   value={formData.confirmPassword}
-                  onChange={handleInputChange}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      confirmPassword: e.target.value,
+                    }))
+                  }
+                  validationType="custom"
+                  validationRules={{
+                    required: true,
+                    custom: validateConfirmPassword,
+                  }}
+                  fieldName="Нууц үг давтах"
+                  onValidationChange={(isValid) =>
+                    handleValidationChange("confirmPassword", isValid)
+                  }
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-                {errors.confirmPassword && (
-                  <p className="text-sm text-red-600">
-                    {errors.confirmPassword}
-                  </p>
-                )}
               </div>
             </CardContent>
 
             <CardFooter className="flex flex-col space-y-4">
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading || !isFormValid}
+              >
                 {isLoading ? "Бүртгүүлж байна..." : "Бүртгүүлэх"}
               </Button>
 

@@ -14,15 +14,43 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ValidatedInput } from "@/components/ui/validated-input";
 import Link from "next/link";
+import toast from "react-hot-toast";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isFormValid, setIsFormValid] = useState(false);
+  const [validationStates, setValidationStates] = useState({
+    email: false,
+    password: false,
+  });
   const router = useRouter();
   const { data: session, status } = useSession();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (status === "loading") return; // Still loading
+
+    if (session) {
+      router.push("/dashboard");
+      return;
+    }
+  }, [session, status, router]);
+
+  const handleValidationChange = (
+    field: "email" | "password",
+    isValid: boolean
+  ) => {
+    setValidationStates((prev) => {
+      const newStates = { ...prev, [field]: isValid };
+      setIsFormValid(newStates.email && newStates.password);
+      return newStates;
+    });
+  };
 
   // Redirect if already logged in
   useEffect(() => {
@@ -37,6 +65,17 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!email || !password) {
+      toast.error("И-мэйл болон нууц үгээ оруулна уу");
+      return;
+    }
+
+    if (!isFormValid) {
+      toast.error("Алдааг засаад дахин оролдоно уу");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -48,15 +87,18 @@ export default function LoginPage() {
 
       if (result?.error) {
         setError(result.error);
+        toast.error("И-мэйл эсвэл нууц үг буруу байна");
       } else if (result?.ok) {
         // Get updated session
         const session = await getSession();
         if (session) {
+          toast.success("Амжилттай нэвтэрлээ");
           router.push("/dashboard");
         }
       }
     } catch (error) {
       setError("Нэвтрэхэд алдаа гарлаа");
+      toast.error("Нэвтрэхэд алдаа гарлаа");
     } finally {
       setIsLoading(false);
     }
@@ -117,24 +159,36 @@ export default function LoginPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="email">И-мэйл хаяг</Label>
-                <Input
+                <ValidatedInput
                   id="email"
                   type="email"
                   placeholder="example@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  validationType="email"
+                  fieldName="И-мэйл хаяг"
+                  onValidationChange={(isValid) =>
+                    handleValidationChange("email", isValid)
+                  }
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="password">Нууц үг</Label>
-                <Input
+                <ValidatedInput
                   id="password"
                   type="password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  validationType="password"
+                  fieldName="Нууц үг"
+                  onValidationChange={(isValid) =>
+                    handleValidationChange("password", isValid)
+                  }
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>
@@ -150,7 +204,11 @@ export default function LoginPage() {
             </CardContent>
 
             <CardFooter className="flex flex-col space-y-4">
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading || !isFormValid}
+              >
                 {isLoading ? "Нэвтэрч байна..." : "Нэвтрэх"}
               </Button>
 
