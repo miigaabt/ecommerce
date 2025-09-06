@@ -3,8 +3,19 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import axios from "axios";
 import { getTokenExpirationTime } from "./jwt-utils";
+import { InputValidator } from "./validation";
 
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:4000/api";
+
+declare module "next-auth" {
+  interface User {
+    accessTokenExpires?: number;
+    accessToken?: string;
+    firstName?: string;
+    lastName?: string;
+    role?: string;
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -19,29 +30,61 @@ export const authOptions: NextAuthOptions = {
           throw new Error("И-мэйл хаяг болон нууц үг шаардлагатай");
         }
 
+        // OWASP Input validation
+        const emailValidation = InputValidator.validateEmail(credentials.email);
+        if (!emailValidation.isValid) {
+          throw new Error(
+            `И-мэйл алдаатай: ${emailValidation.errors.join(", ")}`
+          );
+        }
+
+        const passwordValidation = InputValidator.validatePassword(
+          credentials.password
+        );
+        if (!passwordValidation.isValid) {
+          throw new Error(
+            `Нууц үг алдаатай: ${passwordValidation.errors.join(", ")}`
+          );
+        }
+
         try {
-          console.log("Attempting login to:", `${API_BASE_URL}/auth/login`);
+          // 🔐 Password-г console log дээр харуулахгүй
+          console.log("🔐 Attempting login for user:", credentials.email);
+
+          const loginData = {
+            email: credentials.email.toLowerCase().trim(),
+            password: credentials.password,
+          };
 
           const response = await axios.post(
             `${API_BASE_URL}/auth/login`,
-            {
-              email: credentials.email,
-              password: credentials.password,
-            },
+            loginData,
             {
               timeout: 10000, // 10 seconds timeout
               headers: {
                 "Content-Type": "application/json",
+                "User-Agent": "NextAuth-Client/1.0",
+                "X-Requested-With": "XMLHttpRequest",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                // 🔐 Password request marking
+                "X-Auth-Request": "credentials-login",
               },
             }
           );
+
+          // 🔐 Clear password reference immediately
+          (loginData as any).password = "";
+          delete (loginData as any).password;
 
           console.log("Login response status:", response.status);
           const { data } = response.data;
           const { user, accessToken } = data;
 
           if (user && accessToken) {
-            console.log("Login successful for user:", user.email);
+            console.log("✅ Login successful for user:", user.email);
+
+            const tokenExpiration = getTokenExpirationTime(accessToken);
+
             return {
               id: user.id.toString(),
               email: user.email,
@@ -50,109 +93,69 @@ export const authOptions: NextAuthOptions = {
               lastName: user.lastname,
               role: user.role?.name || "user",
               accessToken: accessToken,
+              accessTokenExpires: tokenExpiration ?? undefined,
             };
           }
 
           console.log("Invalid response format from API");
           return null;
         } catch (error: any) {
-          console.error("Login API error:", {
-            message: error.message,
-            status: error.response?.status,
-            statusText: error.response?.statusText,
-            data: error.response?.data,
-            url: `${API_BASE_URL}/auth/login`,
-          });
+          console.error("🔐 Authentication error:", error.message);
 
-          // Return more specific error messages
-          if (error.code === "ECONNREFUSED") {
+          // NIST Error handling - алдааны мэдээлэл хязгаарлах
+          if (error.response?.status === 401) {
+            throw new Error("И-мэйл эсвэл нууц үг буруу байна");
+          } else if (error.response?.status === 429) {
+            throw new Error(
+              "Хэт олон оролдлого. 15 минутын дараа дахин оролдоно уу"
+            );
+          } else if (error.code === "ECONNREFUSED") {
             throw new Error(
               "Backend сервер ажиллахгүй байна. localhost:4000 дээр Node.js сервер ажиллаж байгаа эсэхийг шалгана уу."
             );
+          } else {
+            throw new Error("Системийн алдаа гарлаа");
           }
-
-          if (error.response?.status === 401) {
-            throw new Error("И-мэйл хаяг эсвэл нууц үг буруу байна");
-          }
-
-          if (error.response?.status === 404) {
-            throw new Error(
-              "Login API олдсонгүй. Backend API зөв тохируулагдсан эсэхийг шалгана уу."
-            );
-          }
-
-          throw new Error(
-            error.response?.data?.message ||
-              error.message ||
-              "Нэвтрэхэд алдаа гарлаа"
-          );
         }
+
+        return null;
       },
     }),
-    // GoogleProvider({
-    //   clientId: process.env.GOOGLE_CLIENT_ID || "",
-    //   clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-    // }),
+
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
   ],
 
   callbacks: {
     async jwt({ token, user, account }) {
-      // Initial sign in
-      if (account && user) {
-        const accessToken = (user as any).accessToken;
-
-        // Extract expiration time from the actual JWT token
-        let tokenExpires: number;
-        const jwtExpiration = getTokenExpirationTime(accessToken);
-
-        if (jwtExpiration) {
-          console.log(
-            "Using JWT expiration time:",
-            new Date(jwtExpiration * 1000)
-          );
-          tokenExpires = jwtExpiration;
-        } else {
-          // Fallback: use current time + 2 minutes for testing
-          console.log("Could not extract JWT expiration, using fallback");
-          tokenExpires = Math.floor(Date.now() / 1000) + 2 * 60;
-        }
-
+      if (user && account) {
         return {
           ...token,
-          accessToken: accessToken,
-          refreshToken: (user as any).refreshToken,
+          accessToken: user.accessToken,
+          accessTokenExpires: user.accessTokenExpires,
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
-          accessTokenExpires: tokenExpires,
         };
       }
 
-      // Return previous token if the access token has not expired yet
+      // Check if token is expired
       const now = Math.floor(Date.now() / 1000);
-
-      if (
-        (token.accessTokenExpires as number) &&
-        now < (token.accessTokenExpires as number)
-      ) {
-        return token;
+      if (token.accessTokenExpires && now > token.accessTokenExpires) {
+        console.log("🔐 Token expired, forcing re-authentication");
+        return { ...token, error: "TokenExpired" };
       }
 
-      // Access token has expired, try to update it
-      console.log("Access token expired, user needs to re-login");
-      return {
-        ...token,
-        error: "RefreshAccessTokenError",
-      };
+      return token;
     },
 
     async session({ session, token }) {
-      // Check if there's an error in the token (like expired)
-      if (token.error) {
-        console.log("Session error:", token.error);
+      if (token.error === "TokenExpired") {
         return {
           ...session,
-          error: token.error,
+          error: "TokenExpired",
         };
       }
 
@@ -170,26 +173,29 @@ export const authOptions: NextAuthOptions = {
     },
 
     async signIn({ user, account, profile }) {
-      // Handle Google OAuth sign-in
       if (account?.provider === "google") {
         try {
-          // Check if user exists in your backend
+          // Register or login with Google
           const response = await axios.post(`${API_BASE_URL}/auth/google`, {
-            email: profile?.email,
-            name: profile?.name,
-            googleId: profile?.sub,
-            picture: (profile as any)?.picture,
+            email: user.email,
+            name: user.name,
+            googleId: account.providerAccountId,
+            picture: user.image,
           });
 
-          if (response.data.user) {
-            (user as any).accessToken = response.data.token;
-            user.firstName = response.data.user.firstName;
-            user.lastName = response.data.user.lastName;
-            user.role = response.data.user.role;
-            return true;
+          const { data } = response.data;
+          if (data?.user) {
+            // Update user object with backend data
+            user.id = data.user.id.toString();
+            user.firstName = data.user.firstname;
+            user.lastName = data.user.lastname;
+            user.role = data.user.role?.name || "user";
+            user.accessToken = data.accessToken;
+            user.accessTokenExpires =
+              getTokenExpirationTime(data.accessToken) ?? undefined;
           }
         } catch (error) {
-          console.error("Google sign-in error:", error);
+          console.error("Google login error:", error);
           return false;
         }
       }
@@ -209,6 +215,4 @@ export const authOptions: NextAuthOptions = {
   },
 
   secret: process.env.NEXTAUTH_SECRET,
-
-  debug: process.env.NODE_ENV === "development",
 };
