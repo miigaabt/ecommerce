@@ -80,8 +80,8 @@ export class InputValidator {
 
     const trimmedName = name.trim();
 
-    if (trimmedName.length < 2) {
-      errors.push(`${fieldName} дор хаяж 2 тэмдэгт байх ёстой`);
+    if (trimmedName.length < 5) {
+      errors.push(`${fieldName} дор хаяж 5 тэмдэгт байх ёстой`);
     }
 
     if (trimmedName.length > 50) {
@@ -89,8 +89,7 @@ export class InputValidator {
     }
 
     // Only letters, spaces, hyphens, and apostrophes
-    const nameRegex =
-      /^[a-zA-ZàáâäãåąčćęèéêëėįìíîïłńòóôöõøùúûüųūÿýżźñçčšžæÀÁÂÄÃÅĄĆČĖĘÈÉÊËÌÍÎÏĮŁŃÒÓÔÖÕØÙÚÛÜŲŪŸÝŻŹÑßÇŒÆČŠŽ\s\-']+$/;
+    const nameRegex = /^[А-ЯЁа-яё]+$/u;
     if (!nameRegex.test(trimmedName)) {
       errors.push(
         `${fieldName} зөвхөн үсэг, зай, зураас, апостроф агуулж болно`
